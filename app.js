@@ -34,7 +34,7 @@ c.save();c.beginPath();c.arc(35,52,19,0,Math.PI*2);c.clip();if(avatar)image(c,av
 text(c,val('username'),65,val('music')?43:52,18);c.font='18px system-ui';const uw=Math.min(270,c.measureText(val('username')).width);text(c,val('posted'),75+uw,val('music')?43:52,16,'#ffffffaa');if(val('music'))text(c,'♫ '+val('music'),65,68,14);text(c,'···',470,50,26);text(c,'×',511,50,32);
 s?.layers.forEach(l=>layer(c,l));c.fillStyle='#080808';c.fillRect(0,872,540,88);
 const a=Math.max(0,t-(s?.actionAt||0)),send=s?.send&&s.message;const chars=Array.from(s?.message||'');const typed=send&&a>0&&a<1.45?chars.slice(0,Math.ceil(a/1.45*chars.length)).join(''):'';const sending=send&&a>=1.45&&a<2.25;
-rr(c,18,887,389,48,25,null,'#ffffff88');c.save();c.beginPath();c.rect(31,890,358,43);c.clip();text(c,typed||'메시지 보내기…',37,911,18,typed?'#fff':'#ffffffbb');c.restore();if(typed)text(c,'↑',382,911,25);else text(c,'☺',379,910,26);
+rr(c,18,887,389,48,25,null,'#ffffff88');c.save();c.beginPath();c.rect(31,890,358,43);c.clip();text(c,typed||'메시지 보내기…',37,911,18,typed?'#fff':'#ffffffbb');c.restore();if(typed)text(c,'↑',382,911,25);else text(c,'☺',369,910,26);
 const liked=s?.liked||(s?.animateLike&&a>.35);heart(c,442,912,liked,1+(s?.animateLike&&a>.35&&a<.65?.2:0));c.strokeStyle='#fff';c.lineWidth=2;c.beginPath();c.moveTo(481,902);c.lineTo(516,893);c.lineTo(504,925);c.lineTo(497,911);c.closePath();c.stroke();c.beginPath();c.moveTo(497,911);c.lineTo(516,893);c.stroke();
 if(sending){const p=Math.min(1,(a-1.45)/.5);c.save();c.globalAlpha=1-Math.max(0,(p-.7)/.3);rr(c,120,820-p*90,375,48,22,'#6354d8');text(c,s.message.slice(0,28),308,844-p*90,18,'#fff','center');c.restore()}if(send&&a>=2.25){rr(c,170,806,200,42,21,'#0009');text(c,'✓ 메시지를 보냈어요',270,827,17,'#fff','center')}
 }
