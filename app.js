@@ -1,24 +1,33 @@
 const $=id=>document.getElementById(id), canvas=$('canvas'),ctx=canvas.getContext('2d');
-let stories=[],index=0,avatar=null,audioURL=null,selected=-1,playing=false,start=0,time=0,busy=false,canceled=false,previewAudio=null;
+let stories=[],index=0,selected=-1,playing=false,start=0,time=0,busy=false,canceled=false,previewAudio=null;
 const val=id=>$(id).value,num=id=>Number(val(id)),current=()=>stories[index];
 const duration=()=>Math.max(2,Math.min(30,num('duration')||5));
+const accountFields=['username','posted','music'];
+function groupStart(i){while(i>0&&stories[i]?.samePrevious)i--;return i}
+function owner(i=index){return stories[groupStart(i)]}
+function audioSegment(i,t=0){const root=groupStart(i),s=stories[root];return {root,url:s?.audioURL,offset:Math.max(0,Number(s?.audioStart)||0)+(i-root)*duration()+t}}
+function musicPlan(ids){const out=[];ids.forEach((i,k)=>{const a=audioSegment(i);if(!a.url)return;const last=out.at(-1);if(last&&last.root===a.root&&last.lastIndex+1===i){last.length+=duration();last.lastIndex=i}else out.push({...a,at:k*duration(),length:duration(),lastIndex:i})});return out}
+function groupControls(){const o=owner();$('samePrevious').disabled=index===0;$('samePrevious').value=index>0&&current()?.samePrevious?'same':'different';$('groupHint').textContent=index===0?'첫 번째 사람의 스토리예요.':current()?.samePrevious?'이전 스토리와 프로필·음악을 공유해요. 아래에서 바꾸면 같은 사람의 스토리에 함께 적용돼요.':'여기서 새로운 사람의 스토리가 시작돼요. 이전 음악은 이어지지 않아요.';for(const k of accountFields)$(k).value=o?.[k]||'';$('audioStart').value=o?.audioStart||0;$('audioName').textContent=o?.audioName||'선택한 음악 없음';$('audio').value=''}
+$('samePrevious').onchange=()=>{if(!current()||index===0)return;const same=val('samePrevious')==='same';stop();current().samePrevious=same;sync()};
+$('audioStart').oninput=()=>{const offset=Math.max(0,num('audioStart'));stop();if(owner())owner().audioStart=offset;groupControls();draw()};
+$('clearAudio').onclick=()=>{stop();const o=owner();if(o){if(o.audioURL)URL.revokeObjectURL(o.audioURL);o.audioURL=null;o.audioName='';groupControls()}};
 function status(s){$('status').textContent=s}
 async function loadImage(file){const url=URL.createObjectURL(file);try{const im=new Image();im.src=url;await im.decode();return im}finally{URL.revokeObjectURL(url)}}
-$('photos').onchange=async e=>{try{for(const f of e.target.files){stories.push({image:await loadImage(f),avatar:null,username:'your.archive',posted:'2시간',music:'',credit:'',creditPosition:'right',creditColor:'#ffffff',creditSize:14,fit:'cover',gradientOpacity:60,gradientHeight:160,bg:'#18151e',layers:[],liked:false,animateLike:true,send:false,typingSpeed:8,message:'오늘도 좋아해 ♡',actionAt:1})}index=Math.max(0,stories.length-e.target.files.length);sync()}catch(e){status('사진을 열지 못했어요. JPG 또는 PNG를 사용해 주세요.')}e.target.value=''};
-$('avatar').onchange=async e=>{const s=current();if(!s){e.target.value='';return status('먼저 스토리 사진을 추가해 주세요.')}if(e.target.files[0]){try{s.avatar=await loadImage(e.target.files[0]);draw()}catch{status('프로필 사진을 열지 못했어요.')}}e.target.value=''};
-$('clearAvatar').onclick=()=>{if(current()){current().avatar=null;draw()}};
+$('photos').onchange=async e=>{try{for(const f of e.target.files){stories.push({image:await loadImage(f),samePrevious:stories.length>0,audioURL:null,audioName:'',audioStart:0,avatar:null,username:'your.archive',posted:'2시간',music:'',credit:'',creditPosition:'right',creditColor:'#ffffff',creditSize:14,fit:'cover',gradientOpacity:60,gradientHeight:160,bg:'#18151e',layers:[],liked:false,animateLike:true,send:false,typingSpeed:8,message:'오늘도 좋아해 ♡',actionAt:1})}index=Math.max(0,stories.length-e.target.files.length);sync()}catch(e){status('사진을 열지 못했어요. JPG 또는 PNG를 사용해 주세요.')}e.target.value=''};
+$('avatar').onchange=async e=>{const s=owner();if(!s){e.target.value='';return status('먼저 스토리 사진을 추가해 주세요.')}if(e.target.files[0]){try{s.avatar=await loadImage(e.target.files[0]);draw()}catch{status('프로필 사진을 열지 못했어요.')}}e.target.value=''};
+$('clearAvatar').onclick=()=>{if(owner()){owner().avatar=null;draw()}};
 
-$('audio').onchange=e=>{stop();if(audioURL)URL.revokeObjectURL(audioURL);audioURL=e.target.files[0]?URL.createObjectURL(e.target.files[0]):null};
+$('audio').onchange=e=>{const f=e.target.files[0];stop();const o=owner();if(!o)return status('먼저 사진을 추가해 주세요.');if(f){if(o.audioURL)URL.revokeObjectURL(o.audioURL);o.audioURL=URL.createObjectURL(f);o.audioName=f.name}groupControls()};
 function thumbs(){$('thumbs').replaceChildren();stories.forEach((s,i)=>{const b=document.createElement('button');b.className=i===index?'active':'';b.title=`스토리 ${i+1}`;const im=document.createElement('img');im.src=s.image.src;b.append(im);b.onclick=()=>go(i);$('thumbs').append(b)})}
 // Decoded images keep their pixels after revoking their temporary URL; thumbnails use a small canvas.
 function thumbsSafe(){thumbs();[...$('thumbs').children].forEach((b,i)=>{const c=document.createElement('canvas');c.width=60;c.height=80;c.getContext('2d').drawImage(stories[i].image,0,0,60,80);b.firstChild.src=c.toDataURL()})}
-function sync(){stop();time=0;selected=-1;const s=current();if(s){for(const k of ['username','posted','music','fit','bg','gradientOpacity','gradientHeight','message','typingSpeed','actionAt','credit','creditPosition','creditColor','creditSize'])$(k).value=s[k];for(const k of ['liked','animateLike','send'])$(k).checked=s[k]}thumbsSafe();layers();draw()}
+function sync(){stop();time=0;selected=-1;const s=current();if(s){for(const k of ['username','posted','music','fit','bg','gradientOpacity','gradientHeight','message','typingSpeed','actionAt','credit','creditPosition','creditColor','creditSize'])$(k).value=s[k];for(const k of ['liked','animateLike','send'])$(k).checked=s[k]}groupControls();thumbsSafe();layers();draw()}
 function layers(){const box=$('layers');box.replaceChildren();current()?.layers.forEach((l,i)=>{const o=new Option(l.text.slice(0,25)||'빈 텍스트',i);box.add(o)});box.selectedIndex=selected;const l=current()?.layers[selected];$('text').value=l?.text||'';if(l){$('color').value=l.color;$('size').value=l.size;$('textStyle').value=l.style}$('rotation').value=l?.rotation||0;$('rotationValue').textContent=($('rotation').value)+'°'}
 function go(i){if(busy)return;index=Math.max(0,Math.min(stories.length-1,i));sync()}
 $('prev').onclick=()=>go(index-1);$('next').onclick=()=>go(index+1);$('reset').onclick=()=>{stop();time=0;draw()};
 for(const [id,delta]of [['left',-1],['right',1]])$(id).onclick=()=>{const j=index+delta;if(j<0||j>=stories.length)return;[stories[index],stories[j]]=[stories[j],stories[index]];index=j;sync()};
 $('remove').onclick=()=>{if(current()){stories.splice(index,1);index=Math.max(0,Math.min(index,stories.length-1));sync()}};
-for(const id of ['username','posted','music','fit','bg','gradientOpacity','gradientHeight','message','typingSpeed','actionAt','liked','animateLike','send','credit','creditPosition','creditColor','creditSize'])$(id).oninput=()=>{if(current())current()[id]=$(id).type==='checkbox'?$(id).checked: ['actionAt','creditSize','typingSpeed','gradientOpacity','gradientHeight'].includes(id)?num(id):val(id);draw()};
+for(const id of ['username','posted','music','fit','bg','gradientOpacity','gradientHeight','message','typingSpeed','actionAt','liked','animateLike','send','credit','creditPosition','creditColor','creditSize'])$(id).oninput=()=>{if(current())(accountFields.includes(id)?owner():current())[id]=$(id).type==='checkbox'?$(id).checked: ['actionAt','creditSize','typingSpeed','gradientOpacity','gradientHeight'].includes(id)?num(id):val(id);draw()};
 for(const id of ['transition'])$(id).oninput=()=>draw();
 function add(mention){if(!current())return status('먼저 사진을 추가해 주세요.');current().layers.push({text:mention?'@username':'여기에 텍스트',x:270,y:480,size:32,color:'#ffffff',rotation:0,style:mention?'mentionBlack':'plain'});selected=current().layers.length-1;layers();draw()}
 $('addText').onclick=()=>add(false);$('addMention').onclick=()=>add(true);$('layers').onchange=()=>{selected=Number(val('layers'));layers();draw()};
@@ -48,11 +57,11 @@ function layer(c,l){
  }c.restore();
 }
 
-function renderStory(c,s,i,t){c.fillStyle=s?.bg||'#18151e';c.fillRect(0,0,540,960);if(s)image(c,s.image,0,0,540,872,s.fit);else{text(c,'나의 작은 순간들',270,420,30,'#d6c5e5','center');text(c,'사진을 추가해 이야기를 시작하세요',270,465,18,'#ab96bb','center')}
+function renderStory(c,s,i,t){const account=owner(i)||s;c.fillStyle=s?.bg||'#18151e';c.fillRect(0,0,540,960);if(s)image(c,s.image,0,0,540,872,s.fit);else{text(c,'나의 작은 순간들',270,420,30,'#d6c5e5','center');text(c,'사진을 추가해 이야기를 시작하세요',270,465,18,'#ab96bb','center')}
 const gradientHeight=Math.max(40,Math.min(600,s?.gradientHeight??160)),gradientOpacity=Math.max(0,Math.min(100,s?.gradientOpacity??60))/100;const gradient=c.createLinearGradient(0,0,0,gradientHeight);gradient.addColorStop(0,`rgba(0,0,0,${gradientOpacity})`);gradient.addColorStop(1,'rgba(0,0,0,0)');c.fillStyle=gradient;c.fillRect(0,0,540,gradientHeight);
 const n=Math.max(1,stories.length),gap=n>40?1:4,w=(516-(n-1)*gap)/n;for(let j=0;j<n;j++){rr(c,12+j*(w+gap),14,w,3,1,'#ffffff55');let f=j<i?1:j===i?Math.min(1,t/duration()):0;if(f)rr(c,12+j*(w+gap),14,w*f,3,1,'#fff')}
-c.save();c.beginPath();c.arc(35,52,19,0,Math.PI*2);c.clip();if(s?.avatar)image(c,s.avatar,16,33,38,38);else{c.fillStyle='#ab8bbd';c.fillRect(16,33,38,38);text(c,'S',35,53,19,'white','center')}c.restore();
-text(c,(s?.username||'your.archive'),65,(s?.music||'')?43:52,18);c.font='18px system-ui';const uw=Math.min(270,c.measureText((s?.username||'your.archive')).width);text(c,(s?.posted||''),75+uw,(s?.music||'')?43:52,16,'#ffffffaa');if((s?.music||''))text(c,'♫ '+(s?.music||''),65,68,14);text(c,'···',470,50,26);text(c,'×',511,50,32);
+c.save();c.beginPath();c.arc(35,52,19,0,Math.PI*2);c.clip();if(account?.avatar)image(c,account.avatar,16,33,38,38);else{c.fillStyle='#ab8bbd';c.fillRect(16,33,38,38);text(c,'S',35,53,19,'white','center')}c.restore();
+text(c,(account?.username||'your.archive'),65,(account?.music||'')?43:52,18);c.font='18px system-ui';const uw=Math.min(270,c.measureText((account?.username||'your.archive')).width);text(c,(account?.posted||''),75+uw,(account?.music||'')?43:52,16,'#ffffffaa');if((account?.music||''))text(c,'♫ '+(account?.music||''),65,68,14);text(c,'···',470,50,26);text(c,'×',511,50,32);
 s?.layers.forEach(l=>layer(c,l));if(s?.credit?.trim()){c.save();c.shadowColor='#000b';c.shadowBlur=4;const left=s.creditPosition==='left';text(c,s.credit,left?16:524,852,s.creditSize||14,s.creditColor||'#ffffff',left?'left':'right');c.restore()}c.fillStyle='#080808';c.fillRect(0,872,540,88);
 const a=Math.max(0,t-(s?.actionAt||0)),send=Boolean(s?.send&&s.message?.trim());
 const chars=Array.from(s?.message||''),speed=Math.max(1,Math.min(60,Number(s?.typingSpeed)||8));
@@ -67,9 +76,12 @@ if(sending){const p=Math.max(0,Math.min(1,(a-sendAt)/flightDuration));c.save();c
 }
 function paint(c,i,t,allowTransition=true){c.save();c.scale(c.canvas.width/540,c.canvas.height/960);const d=duration(),s=stories[i];if(allowTransition&&val('transition')==='slide'&&i<stories.length-1&&t>d-.32){const p=(t-d+.32)/.32;const e=p*p*(3-2*p);c.save();c.translate(-540*e,0);renderStory(c,s,i,t);c.restore();c.save();c.translate(540*(1-e),0);renderStory(c,stories[i+1],i+1,0);c.restore()}else renderStory(c,s,i,t);c.restore()}
 function draw(){paint(ctx,index,time)}
-function stop(){playing=false;$('play').textContent='▶ 재생';previewAudio?.pause();const s=current();if(s){for(const k of ['username','posted','music','fit','bg','gradientOpacity','gradientHeight','message','typingSpeed','actionAt','credit','creditPosition','creditColor','creditSize'])$(k).value=s[k];for(const k of ['liked','animateLike','send'])$(k).checked=s[k]}selected=-1;layers()}
-$('play').onclick=()=>{if(busy||!stories.length)return;if(playing){stop();return}time=0;start=performance.now()-index*duration()*1000;playing=true;$('play').textContent='Ⅱ 일시정지';if(audioURL){previewAudio=new Audio(audioURL);previewAudio.currentTime=num('audioStart')+index*duration();previewAudio.play().catch(()=>status('오디오 재생을 시작하지 못했어요.'))}requestAnimationFrame(tick)};
-function tick(now){if(!playing)return;const total=(now-start)/1000;if(total>=stories.length*duration()){stop();index=stories.length-1;time=duration();draw();return}index=Math.floor(total/duration());time=total%duration();paint(ctx,index,time);requestAnimationFrame(tick)}
+function stop(){playing=false;$('play').textContent='▶ 재생';previewAudio?.pause();const s=current();if(s){for(const k of ['username','posted','music','fit','bg','gradientOpacity','gradientHeight','message','typingSpeed','actionAt','credit','creditPosition','creditColor','creditSize'])$(k).value=s[k];for(const k of ['liked','animateLike','send'])$(k).checked=s[k]}selected=-1;groupControls();layers()}
+let previewRoot=-1,previewToken=0;
+function playMusic(i,t){const a=audioSegment(i,t);if(a.root===previewRoot)return;previewRoot=a.root;const token=++previewToken;previewAudio?.pause();previewAudio=null;if(!a.url)return;const audio=new Audio(a.url);previewAudio=audio;audio.onloadedmetadata=()=>{if(token!==previewToken||!playing)return;if(a.offset>=audio.duration)return;audio.currentTime=a.offset;audio.play().catch(()=>{if(token===previewToken)status('음악 재생을 시작하지 못했어요.')})};audio.load()}
+$('play').onclick=()=>{if(busy||!stories.length)return;if(playing){stop();return}time=0;start=performance.now()-index*duration()*1000;playing=true;previewRoot=-1;$('play').textContent='Ⅱ 일시정지';playMusic(index,0);requestAnimationFrame(tick)};
+function tick(now){if(!playing)return;const total=(now-start)/1000;if(total>=stories.length*duration()){index=stories.length-1;time=duration();stop();draw();return}index=Math.floor(total/duration());time=total%duration();playMusic(index,time);paint(ctx,index,time);requestAnimationFrame(tick)}
+
 let drag=null;canvas.onpointerdown=e=>{if(busy||playing)return;const b=canvas.getBoundingClientRect(),x=(e.clientX-b.left)*540/b.width,y=(e.clientY-b.top)*960/b.height;const ls=current()?.layers||[];let hit=-1;for(let i=ls.length-1;i>=0;i--){const l=ls[i];ctx.font=`${l.size}px system-ui`;const lines=(l.style.startsWith('mention')?'@'+l.text.replace(/^@+/,'').replace(/\n/g,' '):l.text).split('\n'),w=Math.max(...lines.map(x=>ctx.measureText(x).width))+30;const angle=-(l.rotation||0)*Math.PI/180,dx=x-l.x,dy=y-l.y,rx=dx*Math.cos(angle)-dy*Math.sin(angle),ry=dx*Math.sin(angle)+dy*Math.cos(angle);if(Math.abs(rx)<w/2&&Math.abs(ry)<lines.length*l.size*.7+12){hit=i;break}}drag={x,y,hit,lx:hit>=0?ls[hit].x:0,ly:hit>=0?ls[hit].y:0,moved:false};if(hit>=0){selected=hit;layers()}canvas.setPointerCapture(e.pointerId)};
 canvas.onpointermove=e=>{if(!drag)return;const b=canvas.getBoundingClientRect(),x=(e.clientX-b.left)*540/b.width,y=(e.clientY-b.top)*960/b.height;drag.dx=x-drag.x;drag.dy=y-drag.y;if(Math.hypot(drag.dx,drag.dy)>5)drag.moved=true;if(drag.hit>=0){const l=current().layers[drag.hit];l.x=Math.max(10,Math.min(530,drag.lx+drag.dx));l.y=Math.max(100,Math.min(840,drag.ly+drag.dy));draw()}};
 canvas.onpointerup=()=>{if(!drag)return;const d=drag;drag=null;if(d.hit>=0)return;if(d.moved){if(Math.abs(d.dx)>40)go(index+(d.dx<0?1:-1))}else if(d.y>880&&d.x>418&&d.x<468&&current()){current().liked=!current().liked;$('liked').checked=current().liked;draw()}else if(d.y<870)go(index+(d.x<270?-1:1))};canvas.onpointercancel=()=>drag=null;
@@ -85,18 +97,17 @@ $('mp4').onclick=()=>runExport(async()=>{
  const ids=range(),fps=30,seconds=ids.length*duration(),count=Math.round(seconds*fps),c=document.createElement('canvas');c.width=num('quality');c.height=c.width*16/9;
  const config={codec:'avc1.640033',width:c.width,height:c.height,bitrate:c.width===1080?14000000:8000000,framerate:fps,avc:{format:'avc'}};
  if(!(await VideoEncoder.isConfigSupported(config)).supported)throw Error('이 기기에서 해당 MP4 해상도를 지원하지 않아요. 720 해상도를 선택해 주세요.');
- let decoded=null,ac,ve,ae,encodingError;
+ const plan=musicPlan(ids),decoded=new Map();let ac,ve,ae,encodingError;
  try{
-  if(audioURL){
-   if(!window.AudioEncoder||!window.AudioData)throw Error('이 브라우저는 음악을 포함한 MP4 저장을 지원하지 않아요. 최신 PC Chrome·Edge에서 열어주세요.');
-   ac=new AudioContext();decoded=await ac.decodeAudioData(await(await fetch(audioURL)).arrayBuffer());
-   if(num('audioStart')>=decoded.duration)throw Error('오디오 시작 지점이 파일 길이보다 길어요.');
+  if(plan.length){
+   if(!window.AudioEncoder||!window.AudioData)throw Error('음악을 포함한 MP4는 최신 PC Chrome·Edge에서 열어주세요.');
+   ac=new AudioContext();for(const segment of plan){check();if(!decoded.has(segment.url))decoded.set(segment.url,await ac.decodeAudioData(await(await fetch(segment.url)).arrayBuffer()));if(segment.offset>=decoded.get(segment.url).duration)status('음악 끝을 지난 구간은 무음으로 저장돼요.')}
   }
-  const channels=decoded?Math.min(2,decoded.numberOfChannels):0,sampleRate=48000;
+  const channels=plan.length?2:0,sampleRate=48000;
   const audioConfig={codec:'mp4a.40.2',sampleRate,numberOfChannels:channels,bitrate:192000};
-  if(decoded&&!(await AudioEncoder.isConfigSupported(audioConfig)).supported)throw Error('이 브라우저는 AAC 오디오 저장을 지원하지 않아요.');
+  if(plan.length&&!(await AudioEncoder.isConfigSupported(audioConfig)).supported)throw Error('이 브라우저는 AAC 오디오 저장을 지원하지 않아요.');
   const {Muxer,ArrayBufferTarget}=storyMP4,target=new ArrayBufferTarget();
-  const muxer=new Muxer({target,video:{codec:'avc',width:c.width,height:c.height},...(decoded?{audio:{codec:'aac',sampleRate,numberOfChannels:channels}}:{}),fastStart:'in-memory',firstTimestampBehavior:'strict'});
+  const muxer=new Muxer({target,video:{codec:'avc',width:c.width,height:c.height},...(plan.length?{audio:{codec:'aac',sampleRate,numberOfChannels:channels}}:{}),fastStart:'in-memory',firstTimestampBehavior:'strict'});
   ve=new VideoEncoder({output:(chunk,meta)=>muxer.addVideoChunk(chunk,meta),error:e=>encodingError=e});ve.configure(config);
   const context=c.getContext('2d');
   for(let k=0;k<count;k++){
@@ -108,8 +119,10 @@ $('mp4').onclick=()=>runExport(async()=>{
    if(k%3===0){$('progress').value=.85*(k+1)/count;status(`MP4 프레임 만드는 중 ${Math.round((k+1)/count*100)}% · 예상 길이 ${seconds}초`);await new Promise(r=>setTimeout(r,0))}
   }
   await ve.flush();if(encodingError)throw encodingError;
-  if(decoded){
-   const offline=new OfflineAudioContext(channels,Math.round(seconds*sampleRate),sampleRate),src=offline.createBufferSource();src.buffer=decoded;src.connect(offline.destination);src.start(0,Math.max(0,num('audioStart')));const audio=await offline.startRendering();
+  if(plan.length){
+   const offline=new OfflineAudioContext(channels,Math.round(seconds*sampleRate),sampleRate);
+   for(const segment of plan){const buffer=decoded.get(segment.url),remaining=buffer.duration-segment.offset;if(remaining<=0)continue;const src=offline.createBufferSource();src.buffer=buffer;src.connect(offline.destination);src.start(segment.at,segment.offset,Math.min(segment.length,remaining))}
+   const audio=await offline.startRendering();
    ae=new AudioEncoder({output:(chunk,meta)=>muxer.addAudioChunk(chunk,meta),error:e=>encodingError=e});ae.configure(audioConfig);
    for(let pos=0;pos<audio.length;pos+=1024){
     check();if(encodingError)throw encodingError;const n=Math.min(1024,audio.length-pos),data=new Float32Array(n*channels);for(let ch=0;ch<channels;ch++)data.set(audio.getChannelData(ch).subarray(pos,pos+n),ch*n);
